@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import utils
 from data_batcher import SliceBatchGenerator
-from modules import ConvEncoder, DeconvDecoder, UNet
+from modules import ConvEncoder, DeconvDecoder, ConvEncoderUNet, DeconvDecoderUNet
 
 
 class ATLASModel(object):
@@ -576,16 +576,21 @@ class UNetATLASModel(ATLASModel):
     super().__init__(FLAGS)
 
   def build_graph(self):
+    
     assert(self.input_dims == self.inputs_op.get_shape().as_list()[1:])
-    unet = UNet(input_shape=self.input_dims,
-                keep_prob=self.keep_prob,
-                output_shape=self.input_dims,
-                scope_name="unet")
-    self.logits_op = tf.squeeze(
-      unet.build_graph(tf.expand_dims(self.inputs_op, 3)), axis=3)
-
+    encoder, cache = ConvEncoderUNet(input_shape=self.input_dims,
+                          keep_prob=self.keep_prob,
+                          scope_name="encoder_unet")
+    encoder_hiddens_op = encoder.build_graph(tf.expand_dims(self.inputs_op, 3))
+    decoder = DeconvDecoderUNet(keep_prob=self.keep_prob,
+                            output_shape=self.input_dims,
+                            scope_name="decoder_unet")
+    # Only squeezes the last dimension (do not squeeze the batch dimension)
+    self.logits_op = tf.squeeze(decoder.build_graph(encoder_hiddens_op, cache), axis=3)
+    self.predicted_mask_probs_op = self.logits_op
     self.predicted_mask_probs_op = tf.sigmoid(self.logits_op,
-                                              name="predicted_mask_probs")
+                                             name="predicted_mask_probs")
     self.predicted_masks_op = tf.cast(self.predicted_mask_probs_op > 0.5,
-                                      tf.uint8,
+                                      dtype=tf.uint8,
                                       name="predicted_masks")
+

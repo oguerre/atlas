@@ -10,14 +10,13 @@ from tqdm import tqdm
 
 import utils
 from data_batcher import SliceBatchGenerator
-from modules import ConvEncoder, DeconvDecoder, ConvEncoderUNet, DeconvDecoderUNet
+from modules import ConvEncoder, DeconvDecoder, UNet
 
 
 class ATLASModel(object):
   def __init__(self, FLAGS):
     """
     Initializes the ATLAS model.
-
     Inputs:
     - FLAGS: A _FlagValuesWrapper object.
     """
@@ -58,7 +57,6 @@ class ATLASModel(object):
   def add_placeholders(self):
     """
     Adds placeholders to the graph.
-
     Defines:
     - self.batch_size_op: A scalar placeholder Tensor that represents the
       batch size.
@@ -93,7 +91,6 @@ class ATLASModel(object):
   def build_graph(self):
     """
     Builds the main part of the graph for the model.
-
     Defines:
     - self.logits_op: A Tensor of the same shape as self.inputs_op and
       self.target_masks_op e.g. (100, 233, 197) that represents the unscaled
@@ -123,7 +120,6 @@ class ATLASModel(object):
   def add_loss(self):
     """
     Adds loss computation to the graph.
-
     Defines:
     - self.loss: A scalar Tensor that represents the loss; applies sigmoid
       cross entropy to {self.logits_op}; {self.logits_op} contains unscaled
@@ -154,12 +150,10 @@ class ATLASModel(object):
     """
     This performs a single training iteration: (forward-pass, loss, backprop,
     parameter update).
-
     Inputs:
     - sess: A TensorFlow Session object.
     - batch: A Batch object.
     - summary_writer: A SummaryWriter object for TensorBoard.
-
     Outputs:
     - loss: The loss (averaged across the batch) for this batch.
     - global_step: The current number of training iterations we've done.
@@ -211,11 +205,9 @@ class ATLASModel(object):
   def get_loss_for_batch(self, sess, batch):
     """
     Runs a forward-pass only; gets the loss.
-
     Inputs:
     - sess: A TensorFlow Session object.
     - batch: A Batch object.
-
     Outputs:
     - loss: The loss (averaged across the batch) for this batch.
     """
@@ -236,11 +228,9 @@ class ATLASModel(object):
     """
     Runs a forward-pass only; gets the probability distributions for the
     predicted masks i.e. sigmoid({self.logits_op}).
-
     Inputs:
     - sess: A TensorFlow Session object.
     - batch: A Batch object.
-
     Outputs:
     - predicted_mask_probs: A numpy array of the shape self.FLAGS.batch_size by
       self.output_dims.
@@ -258,11 +248,9 @@ class ATLASModel(object):
   def get_predicted_masks_for_batch(self, sess, batch):
     """
     Runs a forward-pass only; gets the predicted masks.
-
     Inputs:
     - sess: A TensorFlow Session object.
     - batch: A Batch object.
-
     Outputs:
     - predicted_masks: A numpy array of the shape self.FLAGS.batch_size by
       self.output_dims.
@@ -286,7 +274,6 @@ class ATLASModel(object):
     """
     Calculates the loss for a dataset, represented by a list of {input_paths}
     and {target_mask_paths}.
-
     Inputs:
     - sess: A TensorFlow Session object.
     - input_paths: A list of Python strs that represent pathnames to input
@@ -297,7 +284,6 @@ class ATLASModel(object):
       {train,dev}. Just for logging purposes.
     - num_samples: A Python int that represents the number of samples to test.
       If num_samples=None, then test whole dataset.
-
     Outputs:
     - loss: A Python float that represents the average loss across the sampled
       examples.
@@ -345,7 +331,6 @@ class ATLASModel(object):
     """
     Calculates the dice coefficient score for a dataset, represented by a
     list of {input_paths} and {target_mask_paths}.
-
     Inputs:
     - sess: A TensorFlow Session object.
     - input_paths: A list of Python strs that represent pathnames to input
@@ -357,7 +342,6 @@ class ATLASModel(object):
     - num_samples: A Python int that represents the number of samples to test.
       If num_samples=None, then test whole dataset.
     - plot: A Python bool. If True, plots each example to screen.
-
     Outputs:
     - dice_coefficient: A Python float that represents the average dice
       coefficient across the sampled examples.
@@ -428,7 +412,6 @@ class ATLASModel(object):
             dev_target_mask_paths):
     """
     Defines the training loop.
-
     Inputs:
     - sess: A TensorFlow Session object.
     - {train,dev}_{input_paths,target_mask_paths}: A list of Python strs
@@ -540,7 +523,6 @@ class ZeroATLASModel(ATLASModel):
     """
     Initializes the Zero ATLAS model, which predicts 0 for the entire mask
     no matter what, which performs well when --use_fake_target_masks.
-
     Inputs:
     - FLAGS: A _FlagValuesWrapper object passed in from main.py.
     """
@@ -569,28 +551,22 @@ class UNetATLASModel(ATLASModel):
     """
     Initializes the U-Net ATLAS model, which predicts 0 for the entire mask
     no matter what, which performs well when --use_fake_target_masks.
-
     Inputs:
     - FLAGS: A _FlagValuesWrapper object passed in from main.py.
     """
     super().__init__(FLAGS)
 
   def build_graph(self):
-    
     assert(self.input_dims == self.inputs_op.get_shape().as_list()[1:])
-    encoder, cache = ConvEncoderUNet(input_shape=self.input_dims,
-                          keep_prob=self.keep_prob,
-                          scope_name="encoder_unet")
-    encoder_hiddens_op = encoder.build_graph(tf.expand_dims(self.inputs_op, 3))
-    decoder = DeconvDecoderUNet(keep_prob=self.keep_prob,
-                            output_shape=self.input_dims,
-                            scope_name="decoder_unet")
-    # Only squeezes the last dimension (do not squeeze the batch dimension)
-    self.logits_op = tf.squeeze(decoder.build_graph(encoder_hiddens_op, cache), axis=3)
-    self.predicted_mask_probs_op = self.logits_op
-    self.predicted_mask_probs_op = tf.sigmoid(self.logits_op,
-                                             name="predicted_mask_probs")
-    self.predicted_masks_op = tf.cast(self.predicted_mask_probs_op > 0.5,
-                                      dtype=tf.uint8,
-                                      name="predicted_masks")
+    unet = UNet(input_shape=self.input_dims,
+                keep_prob=self.keep_prob,
+                output_shape=self.input_dims,
+                scope_name="unet")
+    self.logits_op = tf.squeeze(
+      unet.build_graph(tf.expand_dims(self.inputs_op, 3)), axis=3)
 
+    self.predicted_mask_probs_op = tf.sigmoid(self.logits_op,
+                                              name="predicted_mask_probs")
+    self.predicted_masks_op = tf.cast(self.predicted_mask_probs_op > 0.5,
+                                      tf.uint8,
+                                      name="predicted_masks")

@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import utils
 from data_batcher import SliceBatchGenerator
-from modules import ConvEncoder, DeconvDecoder, ConvEncoderUNet, DeconvDecoderUNet, ConvEncoderDeepUNet, DeconvDecoderDeepUNet, ConvEncoderShallowUNet, DeconvDecoderShallowUNet
+from modules import ConvEncoder, DeconvDecoder, ConvEncoderUNet, DeconvDecoderUNet, ConvEncoderDeepUNet, DeconvDecoderDeepUNet, ConvEncoderShallowUNet, DeconvDecoderShallowUNet, ConvEncoderNew, DeconvDecoderNew
 
 class ATLASModel(object):
   def __init__(self, FLAGS):
@@ -103,12 +103,12 @@ class ATLASModel(object):
     encoder = ConvEncoder(input_shape=self.input_dims,
                           keep_prob=self.keep_prob,
                           scope_name="encoder")
-    encoder_hiddens_op, cache = encoder.build_graph(tf.expand_dims(self.inputs_op, 3))
+    encoder_hiddens_op = encoder.build_graph(tf.expand_dims(self.inputs_op, 3))
     decoder = DeconvDecoder(keep_prob=self.keep_prob,
                             output_shape=self.input_dims,
                             scope_name="decoder")
     # Only squeezes the last dimension (do not squeeze the batch dimension)
-    self.logits_op = tf.squeeze(decoder.build_graph(encoder_hiddens_op, cache), axis=3)
+    self.logits_op = tf.squeeze(decoder.build_graph(encoder_hiddens_op), axis=3)
     self.predicted_mask_probs_op = self.logits_op
     self.predicted_mask_probs_op = tf.sigmoid(self.logits_op,
                                              name="predicted_mask_probs")
@@ -116,7 +116,7 @@ class ATLASModel(object):
                                       dtype=tf.uint8,
                                       name="predicted_masks")
 
-  def compute_loss(self):
+  def compute_tversky_loss(self):
     """
     Compute Tversky loss
     loss = p0g0/(p0g0+p0g1+p1g0)
@@ -172,11 +172,11 @@ class ATLASModel(object):
       weighted_ce_with_logits = tf.nn.weighted_cross_entropy_with_logits
       loss = weighted_ce_with_logits(logits=self.logits_op,
                                      targets=self.target_masks_op,
-                                     pos_weight=10.0,
+                                     pos_weight=100.0,
                                      name="ce")
       #Loss 3
       #Tversky loss
-      #loss = self.compute_loss()  
+      #loss = self.compute_tversky_loss()  
     
       self.loss = tf.reduce_mean(loss)  # scalar mean across batch
 
@@ -670,3 +670,37 @@ class UNetShallowATLASModel(ATLASModel):
     self.predicted_masks_op = tf.cast(self.predicted_mask_probs_op > 0.5,
                                       dtype=tf.uint8,
                                       name="predicted_masks")
+
+class NewATLASModel(ATLASModel):
+  def __init__(self, FLAGS):
+    """
+    Initializes the U-Net ATLAS model, which predicts 0 for the entire mask
+    no matter what, which performs well when --use_fake_target_masks.
+    Inputs:
+    - FLAGS: A _FlagValuesWrapper object passed in from main.py.
+    """
+    super().__init__(FLAGS)
+
+  def build_graph(self):
+    
+    assert(self.input_dims == self.inputs_op.get_shape().as_list()[1:])
+    encoder = ConvEncoderNew(input_shape=self.input_dims,
+                          keep_prob=self.keep_prob,
+                          scope_name="encoder_new")
+    encoder_hiddens_op = encoder.build_graph(tf.expand_dims(self.inputs_op, 3))
+    decoder = DeconvDecoderNew(keep_prob=self.keep_prob,
+                            output_shape=self.input_dims,
+                            scope_name="decoder_new")
+    # Only squeezes the last dimension (do not squeeze the batch dimension)
+
+
+
+
+    self.logits_op = tf.squeeze(decoder.build_graph(encoder_hiddens_op), axis=3)
+    self.predicted_mask_probs_op = self.logits_op
+    self.predicted_mask_probs_op = tf.sigmoid(self.logits_op,
+                                             name="predicted_mask_probs")
+    self.predicted_masks_op = tf.cast(self.predicted_mask_probs_op > 0.5,
+                                      dtype=tf.uint8,
+                                      name="predicted_masks")
+

@@ -153,7 +153,6 @@ class ConvEncoderUNet(NeuralNetwork):
 
       conv7 = self.conv2d_relu(pool3, filter_shape=[3, 3, 256, 512], scope_name="conv7")  # (b, 116, 98, 128)
       conv8 = self.conv2d_relu(conv7, filter_shape=[3, 3, 512, 512], scope_name="conv8")  # (b, 116, 98, 128)
-
       cache = (conv6, conv4, conv2)
       out = conv8
     return (out, cache)
@@ -202,7 +201,7 @@ class ConvEncoderDeepUNet(NeuralNetwork):
   def build_graph(self, input):
     with tf.variable_scope(self.scope_name):
       # 233 x 196
-      paddings = tf.constant([[0, 0], [0, 0], [2, 2], [0, 0]])
+      paddings = tf.constant([[0, 0], [4, 4], [6, 6], [0, 0]])
       # 233 x 200
       padded_input = tf.pad(input, paddings, "CONSTANT")  
       conv1 = self.conv2d_relu(padded_input, filter_shape=[3, 3, 1, 64], scope_name="conv1")  # (230, 194, 64)
@@ -219,9 +218,13 @@ class ConvEncoderDeepUNet(NeuralNetwork):
 
       conv7 = self.conv2d_relu(pool3, filter_shape=[3, 3, 256, 512], scope_name="conv7")  # (b, 116, 98, 128)
       conv8 = self.conv2d_relu(conv7, filter_shape=[3, 3, 512, 512], scope_name="conv8")  # (b, 116, 98, 128)
+      pool4 = self.maxpool2d(conv8, scope_name="pool4")
 
-      cache = (conv6, conv4, conv2)
-      out = conv8
+      conv9 = self.conv2d_relu(pool4, filter_shape=[3, 3, 512, 1024], scope_name="conv9")  # (b, 116, 98, 128)
+      conv10 = self.conv2d_relu(conv9, filter_shape=[3, 3, 1024, 1024], scope_name="conv10")  # (b, 116, 98, 128)
+
+      cache = (conv8, conv6, conv4, conv2)
+      out = conv10
     return (out, cache)
 
 class DeconvDecoderDeepUNet(NeuralNetwork):
@@ -231,29 +234,38 @@ class DeconvDecoderDeepUNet(NeuralNetwork):
     self.scope_name = scope_name
 
   def build_graph(self, input, cache):
-    conv6, conv4, conv2 = cache
+    conv8, conv6, conv4, conv2 = cache
     with tf.variable_scope(self.scope_name):
+
       up1 = self.upsample(input, scope_name="up1", factor=[2, 2])  # (b, 116, 98, 256)
-      deconv1 = self.deconv2d(up1, filter_shape=[2, 2], num_outputs=256, scope_name="deconv1")  # (b, 116, 98, 128)
-      concat1 = tf.concat([conv6, deconv1], axis=3)  # (b, 116, 98, 256)
-      conv9 = self.conv2d_relu(concat1, filter_shape=[3, 3, 512, 512], scope_name="conv9")  # (b, 116, 98, 128)
-      conv10 = self.conv2d_relu(conv9, filter_shape=[3, 3, 512, 256], scope_name="conv10")  # (b, 116, 98, 128)
+      deconv1 = self.deconv2d(up1, filter_shape=[2, 2], num_outputs=512, scope_name="deconv1")  # (b, 116, 98, 128)
 
-      up2 = self.upsample(conv10, scope_name="up2", factor=[2, 2])  # (b, 116, 98, 256)
-      deconv2 = self.deconv2d(up2, filter_shape=[2, 2], num_outputs=128, scope_name="deconv2")  # (b, 116, 98, 128)
-      concat2 = tf.concat([conv4, deconv2], axis=3)  # (b, 116, 98, 256)
-      conv11 = self.conv2d_relu(concat2, filter_shape=[3, 3, 256, 256], scope_name="conv11")
-      conv12 = self.conv2d_relu(conv11, filter_shape=[3, 3, 256, 128], scope_name="conv12")
+      concat1 = tf.concat([conv8, deconv1], axis=3)  # (b, 116, 98, 256)
+      conv11 = self.conv2d_relu(concat1, filter_shape=[3, 3, 1024, 1024], scope_name="conv11")  # (b, 116, 98, 128)
+      conv12 = self.conv2d_relu(conv11, filter_shape=[3, 3, 1024, 512], scope_name="conv12")  # (b, 116, 98, 128)
 
-      up3 = self.upsample(conv12, scope_name="up3", factor=[2, 2])  # (b, 116, 98, 256)
-      deconv3 = self.deconv2d(up3, filter_shape=[2, 2], num_outputs=64, scope_name="deconv3")  # (b, 116, 98, 128)
-      concat3 = tf.concat([conv2, deconv3], axis=3)  # (b, 116, 98, 256)
-      conv13 = self.conv2d_relu(concat3, filter_shape=[3, 3, 128, 128], scope_name="conv13")
-      conv14 = self.conv2d_relu(conv13, filter_shape=[3, 3, 128, 64], scope_name="conv14")
-      conv15 = self.conv2d_relu(conv14, filter_shape=[1, 1, 64, 1], scope_name="conv15")
+      up2 = self.upsample(conv12, scope_name="up2", factor=[2, 2])  # (b, 116, 98, 256)
+      deconv2 = self.deconv2d(up2, filter_shape=[2, 2], num_outputs=256, scope_name="deconv2")  # (b, 116, 98, 128)
+      concat2 = tf.concat([conv6, deconv2], axis=3)  # (b, 116, 98, 256)
+      conv13 = self.conv2d_relu(concat2, filter_shape=[3, 3, 512, 512], scope_name="conv13")  # (b, 116, 98, 128)
+      conv14 = self.conv2d_relu(conv13, filter_shape=[3, 3, 512, 256], scope_name="conv14")  # (b, 116, 98, 128)
 
-      unpadded_out = tf.identity(conv15, name="out")
-      out = unpadded_out[:, :, 2:-2, :]
+      up3 = self.upsample(conv14, scope_name="up3", factor=[2, 2])  # (b, 116, 98, 256)
+      deconv3 = self.deconv2d(up3, filter_shape=[2, 2], num_outputs=128, scope_name="deconv3")  # (b, 116, 98, 128)
+      concat3 = tf.concat([conv4, deconv3], axis=3)  # (b, 116, 98, 256)
+      conv15 = self.conv2d_relu(concat3, filter_shape=[3, 3, 256, 256], scope_name="conv15")
+      conv16 = self.conv2d_relu(conv15, filter_shape=[3, 3, 256, 128], scope_name="conv16")
+
+      up4 = self.upsample(conv16, scope_name="up4", factor=[2, 2])  # (b, 116, 98, 256)
+      deconv4 = self.deconv2d(up4, filter_shape=[2, 2], num_outputs=64, scope_name="deconv4")  # (b, 116, 98, 128)
+      concat4 = tf.concat([conv2, deconv4], axis=3)  # (b, 116, 98, 256)
+      conv17 = self.conv2d_relu(concat4, filter_shape=[3, 3, 128, 128], scope_name="conv17")
+      conv18 = self.conv2d_relu(conv17, filter_shape=[3, 3, 128, 64], scope_name="conv18")
+
+      conv19 = self.conv2d_relu(conv18, filter_shape=[1, 1, 64, 1], scope_name="conv19")
+
+      unpadded_out = tf.identity(conv19, name="out")
+      out = unpadded_out[:, 4:-4, 6:-6, :]
 
     return out
 
@@ -265,15 +277,25 @@ class ConvEncoderShallowUNet(NeuralNetwork):
 
   def build_graph(self, input):
     with tf.variable_scope(self.scope_name):
-      conv1 = self.conv2d_relu(input, filter_shape=[3, 3, 1, 64], scope_name="conv1")  # (230, 194, 64)
+      # 233 x 196
+      paddings = tf.constant([[0, 0], [0, 0], [2, 2], [0, 0]])
+      # 233 x 200
+      padded_input = tf.pad(input, paddings, "CONSTANT")  
+      conv1 = self.conv2d_relu(padded_input, filter_shape=[3, 3, 1, 64], scope_name="conv1")  # (230, 194, 64)
       conv2 = self.conv2d_relu(conv1, filter_shape=[3, 3, 64, 64], scope_name="conv2")  # (228, 192, 64)
       pool1 = self.maxpool2d(conv2, scope_name="pool1") # (114, 96, 64)
 
       conv3 = self.conv2d_relu(pool1, filter_shape=[3, 3, 64, 128], scope_name="conv3")  # (b, 112, 94, 128)
       conv4 = self.conv2d_relu(conv3, filter_shape=[3, 3, 128, 128], scope_name="conv4")  # (b, 110, 92, 128)
+      pool2 = self.maxpool2d(conv4, scope_name="pool2") # (55, 46, 128)
 
-      cache = conv2
-      out = conv4
+      conv5 = self.conv2d_relu(pool2, filter_shape=[3, 3, 128, 256], scope_name="conv5")  # (b, 58, 49, 256)
+      conv6 = self.conv2d_relu(conv5, filter_shape=[3, 3, 256, 256], scope_name="conv6")  # (b, 58, 49, 256)
+      pool2 = self.maxpool2d(conv4, scope_name="pool2") # (55, 46, 128)
+
+      cache = (conv6, conv4, conv2)
+      out = conv6
+
     return (out, cache)
 
 class DeconvDecoderShallowUNet(NeuralNetwork):
@@ -283,17 +305,24 @@ class DeconvDecoderShallowUNet(NeuralNetwork):
     self.scope_name = scope_name
 
   def build_graph(self, input, cache):
-    conv2 = cache
+    conv6, conv4, conv2 = cache
     with tf.variable_scope(self.scope_name):
 
-      up3 = self.upsample(input, scope_name="up3", factor=[2, 2])  # (b, 116, 98, 256)
+      up2 = self.upsample(input, scope_name="up2", factor=[2, 2])  # (b, 116, 98, 256)
+      deconv2 = self.deconv2d(up2, filter_shape=[2, 2], num_outputs=128, scope_name="deconv2")  # (b, 116, 98, 128)
+      concat2 = tf.concat([conv4, deconv2], axis=3)  # (b, 116, 98, 256)
+      conv11 = self.conv2d_relu(concat2, filter_shape=[3, 3, 256, 256], scope_name="conv11")
+      conv12 = self.conv2d_relu(conv11, filter_shape=[3, 3, 256, 128], scope_name="conv12")
+
+      up3 = self.upsample(conv12, scope_name="up3", factor=[2, 2])  # (b, 116, 98, 256)
       deconv3 = self.deconv2d(up3, filter_shape=[2, 2], num_outputs=64, scope_name="deconv3")  # (b, 116, 98, 128)
       concat3 = tf.concat([conv2, deconv3], axis=3)  # (b, 116, 98, 256)
       conv13 = self.conv2d_relu(concat3, filter_shape=[3, 3, 128, 128], scope_name="conv13")
       conv14 = self.conv2d_relu(conv13, filter_shape=[3, 3, 128, 64], scope_name="conv14")
+      
       conv15 = self.conv2d_relu(conv14, filter_shape=[1, 1, 64, 1], scope_name="conv15")
 
-      out = tf.identity(conv15, name="out")
-      # out = unpadded_out[:, :, 2:-2, :]
+      unpadded_out = tf.identity(conv15, name="out")
+      out = unpadded_out[:, :, 2:-2, :]
 
     return out

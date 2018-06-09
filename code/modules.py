@@ -1,13 +1,13 @@
 import numpy as np
 import tensorflow as tf
-from keras.regularizers import l2
-from keras.models import Model, load_model
-from keras.layers import *
-from keras.optimizers import *
-from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
-from keras import backend as K
-from keras.losses import binary_crossentropy
-import keras.backend.tensorflow_backend as KTF
+#from keras.regularizers import l2
+#from keras.models import Model, load_model
+#from keras.layers import *
+#from keras.optimizers import *
+#from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+#from keras import backend as K
+#from keras.losses import binary_crossentropy
+#import keras.backend.tensorflow_backend as KTF
 
 
 class NeuralNetwork(object):
@@ -144,11 +144,15 @@ class ConvEncoderNew(NeuralNetwork):
   def build_graph(self, input):
     #David's ATLAS MODEL
     with tf.variable_scope(self.scope_name):
-      conv1 = self.conv2d_relu(input, filter_shape=[3, 3, 1, 8], scope_name="conv1")  # (232, 196, 8)
+      conv1 = self.conv2d_relu(input, filter_shape=[10, 10, 1, 8], scope_name="conv1")  # (232, 196, 8)
       pool1 = self.maxpool2d(conv1, scope_name="pool1")  # (116, 98, 8)
       drop1 = self.dropout(pool1, keep_prob=self.keep_prob, scope_name="drop1")
-      conv2 = self.conv2d_relu(drop1, filter_shape=[5, 5, 8, 16], scope_name="conv2")  # (116, 98, 16)
-      pool2 = self.maxpool2d(conv2, scope_name="pool2")  # (58, 49, 16)
+      conv2 = self.conv2d_relu(drop1, filter_shape=[3, 3, 8, 8], scope_name="conv2")  # (116, 98, 8)
+      
+      conv3 = self.conv2d_relu(conv2, filter_shape=[3, 3, 8, 8], scope_name="conv3")  # (116, 98, 8)
+      conv4 = self.conv2d_relu(conv3, filter_shape=[3, 3, 8, 16], scope_name="conv4")  # (116, 98, 16)
+
+      pool2 = self.maxpool2d(conv4, scope_name="pool2")  # (58, 49, 16)
       drop2 = self.dropout(pool2, keep_prob=self.keep_prob, scope_name="drop2")
       drop2 = tf.reshape(drop2, shape=[-1, 58*49*16])  # (45472,)
       fc1 = self.fc(drop2, output_shape=1024, scope_name="fc1")
